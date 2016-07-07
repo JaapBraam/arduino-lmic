@@ -681,7 +681,10 @@ static void setBcnRxParams (void) {
 
 #if !defined(DISABLE_JOIN)
 static void initJoinLoop (void) {
-    LMIC.txChnl = os_getRndU1() % 6;
+    do {
+        LMIC.txChnl = os_getRndU1() % 6;
+    // Skip disabled channels
+    } while ((LMIC.channelMap & (1<<LMIC.txChnl)) != 0);
     LMIC.adrTxPow = 14;
     setDrJoin(DRCHG_SET, DR_SF7);
     initDefaultChannels(1);
@@ -692,18 +695,20 @@ static void initJoinLoop (void) {
 
 static ostime_t nextJoinState (void) {
     u1_t failed = 0;
-
-    // Try 869.x and then 864.x with same DR
-    // If both fail try next lower datarate
-    if( ++LMIC.txChnl == 6 )
-        LMIC.txChnl = 0;
-    if( (++LMIC.txCnt & 1) == 0 ) {
-        // Lower DR every 2nd try (having tried 868.x and 864.x with the same DR)
-        if( LMIC.datarate == DR_SF12 )
-            failed = 1; // we have tried all DR - signal EV_JOIN_FAILED
-        else
-            setDrJoin(DRCHG_NOJACC, decDR((dr_t)LMIC.datarate));
-    }
+    do {
+        // Try 869.x and then 864.x with same DR
+        // If both fail try next lower datarate
+        if( ++LMIC.txChnl == 6 )
+            LMIC.txChnl = 0;
+        if( (++LMIC.txCnt & 1) == 0 ) {
+            // Lower DR every 2nd try (having tried 868.x and 864.x with the same DR)
+            if( LMIC.datarate == DR_SF12 )
+                failed = 1; // we have tried all DR - signal EV_JOIN_FAILED
+            else
+                setDrJoin(DRCHG_NOJACC, decDR((dr_t)LMIC.datarate));
+        }
+	// Skip disabled channels
+    } while ( !failed && (LMIC.channelMap & (1<<LMIC.txChnl)) != 0);
     // Clear NEXTCHNL because join state engine controls channel hopping
     LMIC.opmode &= ~OP_NEXTCHNL;
     // Move txend to randomize synchronized concurrent joins.
